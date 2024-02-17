@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/gocolly/colly"
 )
@@ -43,7 +45,19 @@ func main() {
 
 		stock.company = e.ChildText("h1")
 		stock.price = e.ChildText("fin-streamer[data-field='regularMarketPrice']")
-		stock.change = e.ChildText("fin-streamer[data-field='regularMarketChangePercent']")
+		rawChange := e.ChildText("fin-streamer[data-field='regularMarketChangePercent']")
+
+		change := strings.ReplaceAll(rawChange, "(", "")
+		change = strings.ReplaceAll(change, ")", "")
+		change = strings.ReplaceAll(change, "%", "")
+
+		changeNumber, err := strconv.ParseFloat(change, 64)
+
+		if err != nil {
+			fmt.Println("Error parsing change %:", err)
+		}
+
+		stock.change = strconv.FormatFloat(changeNumber, 'f', 2, 64)
 
 		stocks = append(stocks, stock)
 	})
