@@ -1,18 +1,29 @@
 package main
 
 import (
+	"bytes"
+	"context"
 	"encoding/csv"
 	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 
 	"github.com/gocolly/colly"
 )
 
 type Stock struct {
 	company, price, change string
+}
+
+type Date struct {
+	month, day, year string
 }
 
 func main() {
@@ -68,16 +79,8 @@ func main() {
 		c.Visit("https://finance.yahoo.com/quote/" + t + "/")
 	}
 
-	file, error := os.Create("stocks.csv")
-
-	if error != nil {
-		fmt.Println("Error:", error)
-		log.Fatal("Cannot create file")
-	}
-
-	defer file.Close()
-
-	writer := csv.NewWriter(file)
+	var csvData bytes.Buffer
+	writer := csv.NewWriter(&csvData)
 
 	headers := []string{"Company", "Price", "Change"}
 
@@ -87,5 +90,43 @@ func main() {
 		writer.Write([]string{s.company, s.price, s.change})
 	}
 
-	defer writer.Flush()
+	writer.Flush()
+
+	s3Client := getS3Client()
+
+	date := getDate()
+
+	bucketName := os.Getenv("AWS_BUCKET_NAME")
+	objectKey := fmt.Sprintf("%s/%s/%s/stocks.csv", date.year, date.month, date.day)
+
+	_, err := s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
+		Bucket: aws.String(bucketName),
+		Key:    aws.String(objectKey),
+		Body:   bytes.NewReader(csvData.Bytes()),
+	})
+
+	if err != nil {
+		log.Fatalf("Unable to upload CSV to S3, %v", err)
+	}
+
+	fmt.Println("Successfully uploaded CSV to S3")
+}
+
+func getDate() *Date {
+	now := time.Now()
+
+	day := fmt.Sprintf("%02d", now.Day())
+	month := fmt.Sprintf("%02d", int(now.Month()))
+	year := fmt.Sprintf("%d", now.Year())
+
+	return &Date{day, month, year}
+}
+
+func getS3Client() *s3.Client {
+	cfg, err := config.LoadDefaultConfig(context.TODO())
+	if err != nil {
+		log.Fatalf("Unable to load SDK config, %v", err)
+	}
+
+	return s3.NewFromConfig(cfg)
 }
