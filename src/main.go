@@ -2,28 +2,22 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/csv"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/aws/aws-sdk-go-v2/aws"
-	"github.com/aws/aws-sdk-go-v2/config"
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"go.uber.org/zap"
 
+	"github.com/eichemberger/go-stock-scraper/src/customAWS"
+	"github.com/eichemberger/go-stock-scraper/src/logger"
+	"github.com/eichemberger/go-stock-scraper/src/utils"
 	"github.com/gocolly/colly"
 )
 
 type Stock struct {
 	company, price, change string
-}
-
-type Date struct {
-	month, day, year string
 }
 
 var sugar *zap.SugaredLogger
@@ -91,6 +85,8 @@ func main() {
 
 	c.Wait()
 
+	logger.Sugar.Infow("Retriving stocks")
+
 	for _, t := range ticker {
 		c.Visit("https://finance.yahoo.com/quote/" + t + "/")
 	}
@@ -108,18 +104,16 @@ func main() {
 
 	writer.Flush()
 
-	s3Client := getS3Client()
-
-	date := getDate()
+	date := utils.GetDate()
 
 	bucketName := os.Getenv("AWS_BUCKET_NAME")
-	objectKey := fmt.Sprintf("%s/%s/%s/stocks.csv", date.year, date.month, date.day)
+	objectKey := fmt.Sprintf("%s/%s/%s/stocks.csv", date.Year, date.Month, date.Day)
 
-	_, err := s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
-		Bucket: aws.String(bucketName),
-		Key:    aws.String(objectKey),
-		Body:   bytes.NewReader(csvData.Bytes()),
-	})
+	logger.Sugar.Infow("Uploading CSV to S3",
+		"bucket", bucketName,
+		"key", objectKey,
+	)
+	err := customAWS.S3PutObject(csvData.Bytes(), bucketName, objectKey)
 
 	if err != nil {
 		sugar.Fatalw("Unable to upload CSV to S3",
@@ -133,25 +127,4 @@ func main() {
 		"bucket", bucketName,
 		"key", objectKey,
 	)
-}
-
-func getDate() *Date {
-	now := time.Now()
-
-	day := fmt.Sprintf("%02d", now.Day())
-	month := fmt.Sprintf("%02d", int(now.Month()))
-	year := fmt.Sprintf("%d", now.Year())
-
-	return &Date{day, month, year}
-}
-
-func getS3Client() *s3.Client {
-	cfg, err := config.LoadDefaultConfig(context.TODO())
-	if err != nil {
-		sugar.Fatalw("Unable to load SDK config",
-			"error", err,
-		)
-	}
-
-	return s3.NewFromConfig(cfg)
 }
