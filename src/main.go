@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"go.uber.org/zap"
-
 	"github.com/eichemberger/go-stock-scraper/src/customAWS"
 	"github.com/eichemberger/go-stock-scraper/src/logger"
 	"github.com/eichemberger/go-stock-scraper/src/utils"
@@ -18,14 +16,6 @@ import (
 
 type Stock struct {
 	company, price, change string
-}
-
-var sugar *zap.SugaredLogger
-
-func init() {
-	logger, _ := zap.NewProduction()
-	defer logger.Sync()
-	sugar = logger.Sugar()
 }
 
 func main() {
@@ -46,13 +36,13 @@ func main() {
 	c := colly.NewCollector()
 
 	c.OnRequest(func(r *colly.Request) {
-		sugar.Debugw("Visiting",
+		logger.Sugar.Debugw("Visiting",
 			"url", r.URL,
 		)
 	})
 
 	c.OnError(func(r *colly.Response, err error) {
-		sugar.Errorw("Error",
+		logger.Sugar.Errorw("Error",
 			"url", r.Request.URL,
 			"response", r,
 			"error", err,
@@ -73,7 +63,7 @@ func main() {
 		changeNumber, err := strconv.ParseFloat(change, 64)
 
 		if err != nil {
-			sugar.Errorw("Error parsing change %",
+			logger.Sugar.Errorw("Error parsing change %",
 				"error", err,
 			)
 		}
@@ -116,14 +106,14 @@ func main() {
 	err := customAWS.S3PutObject(csvData.Bytes(), bucketName, objectKey)
 
 	if err != nil {
-		sugar.Fatalw("Unable to upload CSV to S3",
+		logger.Sugar.Fatalw("Unable to upload CSV to S3",
 			"error", err,
 			"bucket", bucketName,
 			"key", objectKey,
 		)
 	}
 
-	sugar.Infow("Uploaded CSV to S3",
+	logger.Sugar.Infow("Uploaded CSV to S3",
 		"bucket", bucketName,
 		"key", objectKey,
 	)
