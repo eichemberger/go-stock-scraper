@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -14,6 +13,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"go.uber.org/zap"
 
 	"github.com/gocolly/colly"
 )
@@ -24,6 +24,14 @@ type Stock struct {
 
 type Date struct {
 	month, day, year string
+}
+
+var sugar *zap.SugaredLogger
+
+func init() {
+	logger, _ := zap.NewProduction()
+	defer logger.Sync()
+	sugar = logger.Sugar()
 }
 
 func main() {
@@ -44,11 +52,17 @@ func main() {
 	c := colly.NewCollector()
 
 	c.OnRequest(func(r *colly.Request) {
-		fmt.Println("Visiting", r.URL)
+		sugar.Debugw("Visiting",
+			"url", r.URL,
+		)
 	})
 
 	c.OnError(func(r *colly.Response, err error) {
-		fmt.Println("Request URL:", r.Request.URL, "failed with response:", r, "\nError:", err)
+		sugar.Errorw("Error",
+			"url", r.Request.URL,
+			"response", r,
+			"error", err,
+		)
 	})
 
 	c.OnHTML("div#quote-header-info", func(e *colly.HTMLElement) {
@@ -65,7 +79,9 @@ func main() {
 		changeNumber, err := strconv.ParseFloat(change, 64)
 
 		if err != nil {
-			fmt.Println("Error parsing change %:", err)
+			sugar.Errorw("Error parsing change %",
+				"error", err,
+			)
 		}
 
 		stock.change = strconv.FormatFloat(changeNumber, 'f', 2, 64)
@@ -106,10 +122,17 @@ func main() {
 	})
 
 	if err != nil {
-		log.Fatalf("Unable to upload CSV to S3, %v", err)
+		sugar.Fatalw("Unable to upload CSV to S3",
+			"error", err,
+			"bucket", bucketName,
+			"key", objectKey,
+		)
 	}
 
-	fmt.Println("Successfully uploaded CSV to S3")
+	sugar.Infow("Uploaded CSV to S3",
+		"bucket", bucketName,
+		"key", objectKey,
+	)
 }
 
 func getDate() *Date {
@@ -125,7 +148,9 @@ func getDate() *Date {
 func getS3Client() *s3.Client {
 	cfg, err := config.LoadDefaultConfig(context.TODO())
 	if err != nil {
-		log.Fatalf("Unable to load SDK config, %v", err)
+		sugar.Fatalw("Unable to load SDK config",
+			"error", err,
+		)
 	}
 
 	return s3.NewFromConfig(cfg)
